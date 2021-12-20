@@ -10219,6 +10219,31 @@ static bool ok_float_op(IrBinOp op) {
     zig_unreachable();
 }
 
+static bool is_wrapping_arithmetic_op(IrBinOp op) {
+    switch (op) {
+        case IrBinOpAddWrap:
+        case IrBinOpSubWrap:
+        case IrBinOpMultWrap:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+static bool is_saturating_arithmetic_op(IrBinOp op) {
+    switch (op) {
+        case IrBinOpAddSat:
+        case IrBinOpSubSat:
+        case IrBinOpMultSat:
+        case IrBinOpShlSat:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 static bool is_pointer_arithmetic_allowed(ZigType *lhs_type, IrBinOp op) {
     switch (op) {
         case IrBinOpAdd:
@@ -10441,14 +10466,17 @@ static Stage1AirInst *ir_analyze_bin_op_math(IrAnalyze *ira, Stage1ZirInstBinOp 
     if (type_is_invalid(casted_op2->value->type))
         return ira->codegen->invalid_inst_gen;
 
-    // Comptime integers have no fixed size
     if (scalar_type->id == ZigTypeIdComptimeInt) {
-        if (op_id == IrBinOpAddWrap) {
-            op_id = IrBinOpAdd;
-        } else if (op_id == IrBinOpSubWrap) {
-            op_id = IrBinOpSub;
-        } else if (op_id == IrBinOpMultWrap) {
-            op_id = IrBinOpMult;
+        if (is_wrapping_arithmetic_op(op_id)) {
+            ir_add_error_node(ira, instruction->base.source_node,
+                buf_sprintf("wrapping arithmetic not permitted on type: '%s'",
+                    buf_ptr(&scalar_type->name)));
+            return ira->codegen->invalid_inst_gen;
+        } else if (is_saturating_arithmetic_op(op_id)) {
+            ir_add_error_node(ira, instruction->base.source_node,
+                buf_sprintf("saturating arithmetic not permitted on type: '%s'",
+                    buf_ptr(&scalar_type->name)));
+            return ira->codegen->invalid_inst_gen;
         }
     }
 
